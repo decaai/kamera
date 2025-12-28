@@ -3,79 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GAMBAR PAKE TANGAN</title>
+    <title>AI Gesture Drawing Studio</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
 
     <style>
+        :root {
+            --primary: #6c5ce7;
+            --bg: #0f0f13;
+            --card: #1e1e26;
+            --text: #ffffff;
+        }
+
         body {
             margin: 0; padding: 0; overflow: hidden;
-            background-color: #1a1a1a;
-            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg);
+            font-family: 'Inter', system-ui, sans-serif;
+            color: var(--text);
         }
 
-        #container { position: relative; width: 100vw; height: 100vh; }
+        /* Container Video & Canvas */
+        #viewport {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
 
         canvas, video {
-            position: absolute; top: 0; left: 0;
-            transform: scaleX(-1); /* Efek cermin */
+            position: absolute;
+            border-radius: 20px;
+            transform: scaleX(-1); /* Mirror Effect */
         }
 
-        #ui-layer {
-            position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 20px; border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-            width: 250px;
+        /* Sidebar Control Panel */
+        #controls {
+            position: absolute;
+            left: 20px;
+            top: 20px;
+            bottom: 20px;
+            width: 280px;
+            background: var(--card);
+            border-radius: 24px;
+            padding: 25px;
+            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
         }
 
-        .control-group { margin-bottom: 15px; }
-        label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 5px; color: #444; }
+        .status-badge {
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            text-align: center;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .online { color: #00ff88; border: 1px solid #00ff88; }
+        .offline { color: #ff4757; border: 1px solid #ff4757; }
+
+        .tool-box {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        label { font-size: 13px; opacity: 0.7; }
+
+        input[type="range"] { width: 100%; cursor: pointer; }
 
         .btn {
-            width: 100%; padding: 10px; border: none; border-radius: 6px;
-            cursor: pointer; font-weight: bold; margin-bottom: 5px;
-            transition: all 0.2s;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.3s;
         }
 
-        #status-btn { background: #2ed573; color: white; }
-        #status-btn.off { background: #ffa502; }
-        
-        .btn-clear { background: #ff4757; color: white; }
-        .btn-clear:hover { background: #ff6b81; }
+        .btn:hover { filter: brightness(1.2); }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+        }
+
+        .active-mode {
+            background: #00ff88 !important;
+            color: #000 !important;
+        }
 
         input[type="color"] {
-            width: 100%; height: 40px; border: none; cursor: pointer; background: none;
+            width: 100%; height: 45px; border: none; border-radius: 8px; background: none; cursor: pointer;
         }
-
-        .info { font-size: 12px; color: #666; line-height: 1.4; }
     </style>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <h2 style="margin:0 0 10px 0; font-size: 18px;">By Wisnu Ketche</h2>
-        
-        <div class="control-group">
-            <label>MODE GAMBAR</label>
-            <button id="status-btn" class="btn" onclick="toggleDrawingMode()">DRAWING: ON</button>
-            <p class="info" id="mode-desc">Garis akan muncul saat jari terdeteksi.</p>
+    <div id="controls">
+        <h2 style="margin:0; font-size: 20px; color: var(--primary);">GestureDraw AI</h2>
+        <div id="ai-status" class="status-badge offline">AI Starting...</div>
+
+        <div class="tool-box">
+            <label>Drawing Mode</label>
+            <button id="draw-toggle" class="btn active-mode" onclick="setMode('draw')">Pen Mode</button>
+            <button id="erase-toggle" class="btn btn-outline" onclick="setMode('erase')">Eraser Mode</button>
         </div>
 
-        <div class="control-group">
-            <label>WARNA GARIS</label>
-            <input type="color" id="colorPicker" value="#00FF00" onchange="updateColor(this.value)">
+        <div class="tool-box">
+            <label>Line Color</label>
+            <input type="color" id="colorPicker" value="#6c5ce7">
         </div>
 
-        <button class="btn btn-clear" onclick="clearCanvas()">Hapus Semua</button>
+        <div class="tool-box">
+            <label>Brush Size: <span id="size-val">8</span>px</label>
+            <input type="range" id="sizePicker" min="2" max="50" value="8" oninput="document.getElementById('size-val').innerText=this.value">
+        </div>
+
+        <button class="btn btn-outline" style="border-color: #ff4757; color: #ff4757;" onclick="clearCanvas()">Clear Canvas</button>
         
-        <hr>
-        <p class="info">Status: <span id="ai-status" style="color:orange">Inisialisasi...</span></p>
+        <div style="margin-top: auto; font-size: 11px; opacity: 0.5;">
+            Tip: Gunakan jari telunjuk untuk menggambar. Pastikan pencahayaan cukup.
+        </div>
     </div>
 
-    <div id="container">
+    <div id="viewport">
         <video id="input_video" style="display:none;"></video>
         <canvas id="camera_canvas"></canvas>
         <canvas id="paint_canvas"></canvas>
@@ -88,22 +151,19 @@
         const cameraCtx = cameraCanvas.getContext('2d');
         const paintCtx = paintCanvas.getContext('2d');
         
-        const statusBtn = document.getElementById('status-btn');
-        const aiStatus = document.getElementById('ai-status');
-
+        let currentMode = 'draw'; // 'draw' or 'erase'
         let lastX = 0, lastY = 0;
-        let isDrawingActive = true; // Apakah fitur gambar nyala atau mati
-        let isFirstPoint = true;    // Untuk mencegah garis lompat dari titik terakhir
+        let isFirstPoint = true;
 
         function resize() {
-            cameraCanvas.width = paintCanvas.width = window.innerWidth;
-            cameraCanvas.height = paintCanvas.height = window.innerHeight;
-            setupCanvasStyle();
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            cameraCanvas.width = paintCanvas.width = w;
+            cameraCanvas.height = paintCanvas.height = h;
+            resetContextStyle();
         }
 
-        function setupCanvasStyle() {
-            paintCtx.strokeStyle = document.getElementById('colorPicker').value;
-            paintCtx.lineWidth = 8;
+        function resetContextStyle() {
             paintCtx.lineCap = "round";
             paintCtx.lineJoin = "round";
         }
@@ -111,64 +171,60 @@
         window.addEventListener('resize', resize);
         resize();
 
-        function toggleDrawingMode() {
-            isDrawingActive = !isDrawingActive;
-            if (isDrawingActive) {
-                statusBtn.innerText = "DRAWING: ON";
-                statusBtn.classList.remove('off');
-                document.getElementById('mode-desc').innerText = "Garis muncul saat jari terdeteksi.";
-            } else {
-                statusBtn.innerText = "DRAWING: OFF (Hover)";
-                statusBtn.classList.add('off');
-                document.getElementById('mode-desc').innerText = "Hanya kursor, tidak menggambar.";
-            }
-            isFirstPoint = true; // Reset agar tidak nyambung dari posisi lama
-        }
-
-        function updateColor(val) {
-            paintCtx.strokeStyle = val;
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('draw-toggle').className = mode === 'draw' ? 'btn active-mode' : 'btn btn-outline';
+            document.getElementById('erase-toggle').className = mode === 'erase' ? 'btn active-mode' : 'btn btn-outline';
         }
 
         function onResults(results) {
             cameraCtx.save();
             cameraCtx.clearRect(0, 0, cameraCanvas.width, cameraCanvas.height);
+            
+            // Render video
             cameraCtx.drawImage(results.image, 0, 0, cameraCanvas.width, cameraCanvas.height);
             
+            const statusBadge = document.getElementById('ai-status');
+
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                aiStatus.innerText = "Aktif";
-                aiStatus.style.color = "#2ed573";
+                statusBadge.innerText = "Tracking Active";
+                statusBadge.className = "status-badge online";
 
                 const landmarks = results.multiHandLandmarks[0];
-                const indexTip = landmarks[8]; // Ujung jari telunjuk
+                const indexTip = landmarks[8]; 
                 
                 const x = indexTip.x * paintCanvas.width;
                 const y = indexTip.y * paintCanvas.height;
 
-                if (isDrawingActive) {
-                    if (!isFirstPoint) {
-                        paintCtx.beginPath();
-                        paintCtx.moveTo(lastX, lastY);
-                        paintCtx.lineTo(x, y);
-                        paintCtx.stroke();
-                    }
-                    isFirstPoint = false;
+                // Drawing logic
+                paintCtx.lineWidth = document.getElementById('sizePicker').value;
+                
+                if (currentMode === 'draw') {
+                    paintCtx.globalCompositeOperation = 'source-over';
+                    paintCtx.strokeStyle = document.getElementById('colorPicker').value;
+                } else {
+                    paintCtx.globalCompositeOperation = 'destination-out';
                 }
 
+                if (!isFirstPoint) {
+                    paintCtx.beginPath();
+                    paintCtx.moveTo(lastX, lastY);
+                    paintCtx.lineTo(x, y);
+                    paintCtx.stroke();
+                }
+
+                isFirstPoint = false;
                 lastX = x;
                 lastY = y;
 
-                // Kursor visual
-                cameraCtx.fillStyle = isDrawingActive ? paintCtx.strokeStyle : "white";
-                cameraCtx.beginPath();
-                cameraCtx.arc(x, y, 12, 0, 2 * Math.PI);
-                cameraCtx.fill();
-                cameraCtx.strokeStyle = "white";
-                cameraCtx.stroke();
+                // Draw Landmark Connection (Visual Only)
+                drawConnectors(cameraCtx, landmarks, HAND_CONNECTIONS, {color: '#ffffff', lineWidth: 1});
+                drawLandmarks(cameraCtx, landmarks, {color: '#6c5ce7', lineWidth: 1, radius: 3});
 
             } else {
-                aiStatus.innerText = "Mencari Tangan...";
-                aiStatus.style.color = "#ff4757";
-                isFirstPoint = true; // Reset jika tangan hilang
+                statusBadge.innerText = "No Hand Detected";
+                statusBadge.className = "status-badge offline";
+                isFirstPoint = true;
             }
             cameraCtx.restore();
         }
@@ -180,8 +236,8 @@
         hands.setOptions({
             maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
+            minDetectionConfidence: 0.75,
+            minTrackingConfidence: 0.75
         });
 
         hands.onResults(onResults);
