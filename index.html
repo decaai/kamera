@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Finger Painter - Satu File</title>
+    <title>AI Finger Painter Pro</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
@@ -11,69 +11,68 @@
 
     <style>
         body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
+            margin: 0; padding: 0; overflow: hidden;
             background-color: #1a1a1a;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
         }
 
-        #container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-        }
+        #container { position: relative; width: 100vw; height: 100vh; }
 
-        /* Mirror video dan canvas agar gerakan jari natural */
         canvas, video {
-            position: absolute;
-            top: 0;
-            left: 0;
-            transform: scaleX(-1);
+            position: absolute; top: 0; left: 0;
+            transform: scaleX(-1); /* Efek cermin */
         }
 
         #ui-layer {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 100;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            position: absolute; top: 20px; left: 20px; z-index: 100;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px; border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            width: 250px;
         }
 
-        h2 { margin: 0 0 10px 0; color: #333; font-size: 18px; }
-        p { font-size: 14px; color: #666; }
+        .control-group { margin-bottom: 15px; }
+        label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 5px; color: #444; }
 
-        .btn-clear {
-            background: #ff4757;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background 0.3s;
+        .btn {
+            width: 100%; padding: 10px; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: bold; margin-bottom: 5px;
+            transition: all 0.2s;
         }
 
-        .btn-clear:hover {
-            background: #ff6b81;
+        #status-btn { background: #2ed573; color: white; }
+        #status-btn.off { background: #ffa502; }
+        
+        .btn-clear { background: #ff4757; color: white; }
+        .btn-clear:hover { background: #ff6b81; }
+
+        input[type="color"] {
+            width: 100%; height: 40px; border: none; cursor: pointer; background: none;
         }
 
-        #status {
-            font-weight: bold;
-            color: #2ed573;
-        }
+        .info { font-size: 12px; color: #666; line-height: 1.4; }
     </style>
 </head>
 <body>
 
     <div id="ui-layer">
-        <h2>AI Finger Painter</h2>
-        <p>Status: <span id="status">Memuat AI...</span></p>
-        <p>Panduan: Angkat <b>Jari Telunjuk</b> untuk menggambar.</p>
-        <button class="btn-clear" onclick="clearCanvas()">Hapus Semua</button>
+        <h2 style="margin:0 0 10px 0; font-size: 18px;">AI Painter Pro</h2>
+        
+        <div class="control-group">
+            <label>MODE MENGGAMBAR</label>
+            <button id="status-btn" class="btn" onclick="toggleDrawingMode()">DRAWING: ON</button>
+            <p class="info" id="mode-desc">Garis akan muncul saat jari terdeteksi.</p>
+        </div>
+
+        <div class="control-group">
+            <label>WARNA GARIS</label>
+            <input type="color" id="colorPicker" value="#00FF00" onchange="updateColor(this.value)">
+        </div>
+
+        <button class="btn btn-clear" onclick="clearCanvas()">Hapus Semua</button>
+        
+        <hr>
+        <p class="info">Status AI: <span id="ai-status" style="color:orange">Inisialisasi...</span></p>
     </div>
 
     <div id="container">
@@ -86,22 +85,24 @@
         const videoElement = document.getElementById('input_video');
         const cameraCanvas = document.getElementById('camera_canvas');
         const paintCanvas = document.getElementById('paint_canvas');
-        
         const cameraCtx = cameraCanvas.getContext('2d');
         const paintCtx = paintCanvas.getContext('2d');
-        const statusText = document.getElementById('status');
+        
+        const statusBtn = document.getElementById('status-btn');
+        const aiStatus = document.getElementById('ai-status');
 
-        let lastX = 0;
-        let lastY = 0;
-        let isDrawing = false;
+        let lastX = 0, lastY = 0;
+        let isDrawingActive = true; // Apakah fitur gambar nyala atau mati
+        let isFirstPoint = true;    // Untuk mencegah garis lompat dari titik terakhir
 
-        // Sesuaikan ukuran canvas dengan jendela
         function resize() {
             cameraCanvas.width = paintCanvas.width = window.innerWidth;
             cameraCanvas.height = paintCanvas.height = window.innerHeight;
-            
-            // Set style garis gambar
-            paintCtx.strokeStyle = "#00FF00"; // Warna hijau neon
+            setupCanvasStyle();
+        }
+
+        function setupCanvasStyle() {
+            paintCtx.strokeStyle = document.getElementById('colorPicker').value;
             paintCtx.lineWidth = 8;
             paintCtx.lineCap = "round";
             paintCtx.lineJoin = "round";
@@ -110,51 +111,68 @@
         window.addEventListener('resize', resize);
         resize();
 
+        function toggleDrawingMode() {
+            isDrawingActive = !isDrawingActive;
+            if (isDrawingActive) {
+                statusBtn.innerText = "DRAWING: ON";
+                statusBtn.classList.remove('off');
+                document.getElementById('mode-desc').innerText = "Garis muncul saat jari terdeteksi.";
+            } else {
+                statusBtn.innerText = "DRAWING: OFF (Hover)";
+                statusBtn.classList.add('off');
+                document.getElementById('mode-desc').innerText = "Hanya kursor, tidak menggambar.";
+            }
+            isFirstPoint = true; // Reset agar tidak nyambung dari posisi lama
+        }
+
+        function updateColor(val) {
+            paintCtx.strokeStyle = val;
+        }
+
         function onResults(results) {
-            // 1. Gambar feedback kamera
             cameraCtx.save();
             cameraCtx.clearRect(0, 0, cameraCanvas.width, cameraCanvas.height);
             cameraCtx.drawImage(results.image, 0, 0, cameraCanvas.width, cameraCanvas.height);
             
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                statusText.innerText = "Terdeteksi!";
-                statusText.style.color = "#2ed573";
+                aiStatus.innerText = "Aktif";
+                aiStatus.style.color = "#2ed573";
 
                 const landmarks = results.multiHandLandmarks[0];
-                // Titik 8 adalah ujung jari telunjuk
-                const indexTip = landmarks[8];
+                const indexTip = landmarks[8]; // Ujung jari telunjuk
                 
-                // Konversi koordinat normal (0-1) ke pixel
                 const x = indexTip.x * paintCanvas.width;
                 const y = indexTip.y * paintCanvas.height;
 
-                // Logika Menggambar Garis Halus
-                if (isDrawing) {
-                    paintCtx.beginPath();
-                    paintCtx.moveTo(lastX, lastY);
-                    paintCtx.lineTo(x, y);
-                    paintCtx.stroke();
+                if (isDrawingActive) {
+                    if (!isFirstPoint) {
+                        paintCtx.beginPath();
+                        paintCtx.moveTo(lastX, lastY);
+                        paintCtx.lineTo(x, y);
+                        paintCtx.stroke();
+                    }
+                    isFirstPoint = false;
                 }
 
                 lastX = x;
                 lastY = y;
-                isDrawing = true;
 
-                // Gambar kursor kecil di jari pada layer kamera
-                cameraCtx.fillStyle = "white";
+                // Kursor visual
+                cameraCtx.fillStyle = isDrawingActive ? paintCtx.strokeStyle : "white";
                 cameraCtx.beginPath();
-                cameraCtx.arc(x, y, 10, 0, 2 * Math.PI);
+                cameraCtx.arc(x, y, 12, 0, 2 * Math.PI);
                 cameraCtx.fill();
+                cameraCtx.strokeStyle = "white";
+                cameraCtx.stroke();
 
             } else {
-                statusText.innerText = "Tangan tidak terlihat";
-                statusText.style.color = "#ff4757";
-                isDrawing = false;
+                aiStatus.innerText = "Mencari Tangan...";
+                aiStatus.style.color = "#ff4757";
+                isFirstPoint = true; // Reset jika tangan hilang
             }
             cameraCtx.restore();
         }
 
-        // Inisialisasi MediaPipe Hands
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
@@ -162,19 +180,17 @@
         hands.setOptions({
             maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.8,
-            minTrackingConfidence: 0.8
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
         });
 
         hands.onResults(onResults);
 
-        // Jalankan Kamera
         const camera = new Camera(videoElement, {
             onFrame: async () => {
                 await hands.send({image: videoElement});
             },
-            width: 1280,
-            height: 720
+            width: 1280, height: 720
         });
         camera.start();
 
