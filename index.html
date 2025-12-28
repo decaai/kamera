@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Finger Painter - Satu File</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Mirror video dan canvas agar gerakan jari natural */
+        canvas, video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: scaleX(-1);
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        h2 { margin: 0 0 10px 0; color: #333; font-size: 18px; }
+        p { font-size: 14px; color: #666; }
+
+        .btn-clear {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+
+        .btn-clear:hover {
+            background: #ff6b81;
+        }
+
+        #status {
+            font-weight: bold;
+            color: #2ed573;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <h2>AI Finger Painter</h2>
+        <p>Status: <span id="status">Memuat AI...</span></p>
+        <p>Panduan: Angkat <b>Jari Telunjuk</b> untuk menggambar.</p>
+        <button class="btn-clear" onclick="clearCanvas()">Hapus Semua</button>
+    </div>
+
+    <div id="container">
+        <video id="input_video" style="display:none;"></video>
+        <canvas id="camera_canvas"></canvas>
+        <canvas id="paint_canvas"></canvas>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const cameraCanvas = document.getElementById('camera_canvas');
+        const paintCanvas = document.getElementById('paint_canvas');
+        
+        const cameraCtx = cameraCanvas.getContext('2d');
+        const paintCtx = paintCanvas.getContext('2d');
+        const statusText = document.getElementById('status');
+
+        let lastX = 0;
+        let lastY = 0;
+        let isDrawing = false;
+
+        // Sesuaikan ukuran canvas dengan jendela
+        function resize() {
+            cameraCanvas.width = paintCanvas.width = window.innerWidth;
+            cameraCanvas.height = paintCanvas.height = window.innerHeight;
+            
+            // Set style garis gambar
+            paintCtx.strokeStyle = "#00FF00"; // Warna hijau neon
+            paintCtx.lineWidth = 8;
+            paintCtx.lineCap = "round";
+            paintCtx.lineJoin = "round";
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        function onResults(results) {
+            // 1. Gambar feedback kamera
+            cameraCtx.save();
+            cameraCtx.clearRect(0, 0, cameraCanvas.width, cameraCanvas.height);
+            cameraCtx.drawImage(results.image, 0, 0, cameraCanvas.width, cameraCanvas.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                statusText.innerText = "Terdeteksi!";
+                statusText.style.color = "#2ed573";
+
+                const landmarks = results.multiHandLandmarks[0];
+                // Titik 8 adalah ujung jari telunjuk
+                const indexTip = landmarks[8];
+                
+                // Konversi koordinat normal (0-1) ke pixel
+                const x = indexTip.x * paintCanvas.width;
+                const y = indexTip.y * paintCanvas.height;
+
+                // Logika Menggambar Garis Halus
+                if (isDrawing) {
+                    paintCtx.beginPath();
+                    paintCtx.moveTo(lastX, lastY);
+                    paintCtx.lineTo(x, y);
+                    paintCtx.stroke();
+                }
+
+                lastX = x;
+                lastY = y;
+                isDrawing = true;
+
+                // Gambar kursor kecil di jari pada layer kamera
+                cameraCtx.fillStyle = "white";
+                cameraCtx.beginPath();
+                cameraCtx.arc(x, y, 10, 0, 2 * Math.PI);
+                cameraCtx.fill();
+
+            } else {
+                statusText.innerText = "Tangan tidak terlihat";
+                statusText.style.color = "#ff4757";
+                isDrawing = false;
+            }
+            cameraCtx.restore();
+        }
+
+        // Inisialisasi MediaPipe Hands
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.8,
+            minTrackingConfidence: 0.8
+        });
+
+        hands.onResults(onResults);
+
+        // Jalankan Kamera
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+        camera.start();
+
+        function clearCanvas() {
+            paintCtx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+        }
+    </script>
+</body>
+</html>
